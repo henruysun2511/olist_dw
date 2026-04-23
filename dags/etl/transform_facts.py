@@ -78,7 +78,6 @@ def load_fact_delivery(**kwargs):
 
     items = pd.read_sql('SELECT DISTINCT order_id, seller_id FROM stg_items', stg)
 
-    # ✅ FIX: SQL JOIN đúng cú pháp với FROM ... JOIN ...
     custs = pd.read_sql('''
         SELECT o.order_id, c.customer_zip_code_prefix AS zip
         FROM stg_customers c
