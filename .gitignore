@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Airflow
+logs/
+plugins/
+*.db
+
+# Environment variables (Quan trọng: Không nên đẩy thông tin bảo mật lên Git)
+.env
+
+# Docker
+.dockerignore
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
