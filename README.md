@@ -53,12 +53,12 @@ Mở terminal tại thư mục dự án và chạy các lệnh sau:
 
 **Khởi tạo Airflow (Chỉ chạy lần đầu):**
 ```bash
-docker compose up airflow-init
+docker-compose up airflow-init
 ```
 
 **Khởi động tất cả các dịch vụ:**
 ```bash
-docker compose up -d
+docker-compose up -d
 ```
 
 ## 📈 Cách vận hành dự án
