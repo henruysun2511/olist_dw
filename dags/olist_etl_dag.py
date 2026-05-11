@@ -15,9 +15,11 @@ from etl.transform_dims import (
     load_dim_customer,
     load_dim_seller,
     load_dim_product,
+    load_dim_order,          # ← MỚI
 )
 from etl.transform_facts import (
     load_fact_sale,
+    load_fact_payment,       # ← MỚI
     load_fact_delivery,
     load_fact_reviews,
 )
@@ -37,7 +39,7 @@ with DAG(
     'olist_etl_pipeline',
     default_args=default_args,
     description='ETL pipeline for Olist E-commerce Data Warehouse',
-    schedule=timedelta(days=1),            # ← THÀNH CÁI NÀY
+    schedule=timedelta(days=1),
     catchup=False,
 ) as dag:
 
@@ -47,7 +49,7 @@ with DAG(
         python_callable=extract_all_sources,
     )
 
-    # ── 2. DIM TABLES – nhóm độc lập (không cần geo_key) ─────
+    # ── 2. DIM TABLES – nhóm độc lập ─────────────────────────
     t_dim_date = PythonOperator(
         task_id='load_dim_date',
         python_callable=load_dim_date,
@@ -64,6 +66,10 @@ with DAG(
         task_id='load_dim_orderstatus',
         python_callable=load_dim_orderstatus,
     )
+    t_dim_product = PythonOperator(
+        task_id='load_dim_product',
+        python_callable=load_dim_product,
+    )
 
     # ── 3. DIM TABLES – cần geo_key (chạy sau geo) ───────────
     t_dim_customer = PythonOperator(
@@ -74,15 +80,21 @@ with DAG(
         task_id='load_dim_seller',
         python_callable=load_dim_seller,
     )
-    t_dim_product = PythonOperator(
-        task_id='load_dim_product',
-        python_callable=load_dim_product,
+
+    # ── 4. DIM_ORDER – cần customer_key + status_key ─────────
+    t_dim_order = PythonOperator(
+        task_id='load_dim_order',
+        python_callable=load_dim_order,
     )
 
-    # ── 4. FACT TABLES ────────────────────────────────────────
+    # ── 5. FACT TABLES ────────────────────────────────────────
     t_fact_sale = PythonOperator(
         task_id='load_fact_sale',
         python_callable=load_fact_sale,
+    )
+    t_fact_payment = PythonOperator(
+        task_id='load_fact_payment',
+        python_callable=load_fact_payment,
     )
     t_fact_delivery = PythonOperator(
         task_id='load_fact_delivery',
@@ -93,28 +105,37 @@ with DAG(
         python_callable=load_fact_reviews,
     )
 
-    # ── 5. VALIDATE ───────────────────────────────────────────
+    # ── 6. VALIDATE ───────────────────────────────────────────
     t_validate = PythonOperator(
         task_id='validate_dw',
         python_callable=validate_dw,
     )
 
     # ── DEPENDENCY GRAPH ──────────────────────────────────────
+
     # Extract trước tất cả
     t_extract >> [t_dim_date, t_dim_geo, t_dim_pay, t_dim_status, t_dim_product]
 
     # Geo phải xong trước Customer và Seller
     t_dim_geo >> [t_dim_customer, t_dim_seller]
 
-    # Tất cả Dim xong mới chạy Fact_Sale
+    # Dim_Order cần customer_key và status_key → chạy sau customer + status
+    [t_dim_customer, t_dim_status] >> t_dim_order
+
+    # Fact_Sale cần: date, customer, seller, product, order
     [t_dim_date, t_dim_customer, t_dim_seller,
-     t_dim_product, t_dim_pay, t_dim_status] >> t_fact_sale
+     t_dim_product, t_dim_order] >> t_fact_sale
 
-    # Fact_Delivery cần Dim_Date, Dim_Seller, Dim_Geo, Dim_Status
-    [t_dim_date, t_dim_seller, t_dim_geo, t_dim_status] >> t_fact_delivery
+    # Fact_Payment cần: date, paymenttype, order
+    [t_dim_date, t_dim_pay, t_dim_order] >> t_fact_payment
 
-    # Fact_Reviews cần Fact_Sale đã có seller_key/product_key
-    t_fact_sale >> t_fact_reviews
+    # Fact_Delivery cần: date, seller, geo, order, customer
+    [t_dim_date, t_dim_seller, t_dim_geo,
+     t_dim_customer, t_dim_order] >> t_fact_delivery
 
-    # Validate sau khi cả 3 Fact xong
-    [t_fact_sale, t_fact_delivery, t_fact_reviews] >> t_validate
+    # Fact_Reviews cần: date, customer, order
+    [t_dim_date, t_dim_customer, t_dim_order] >> t_fact_reviews
+
+    # Validate sau khi tất cả Fact xong
+    [t_fact_sale, t_fact_payment,
+     t_fact_delivery, t_fact_reviews] >> t_validate

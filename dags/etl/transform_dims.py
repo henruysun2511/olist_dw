@@ -102,21 +102,46 @@ def load_dim_product(**kwargs):
     dw  = get_pg_engine('dw')
 
     df = pd.read_sql('''
-        SELECT p.product_id,
-               p.product_category_name,
-               p.product_name_lenght         AS name_length,
-               p.product_description_lenght  AS description_length,
-               p.product_photos_qty          AS photos_qty,
-               p.product_weight_g            AS weight_g,
-               p.product_length_cm           AS length_cm,
-               p.product_height_cm           AS height_cm,
-               p.product_width_cm            AS width_cm,
-               COALESCE(t.product_category_name_english, p.product_category_name) AS category_name_en
-        FROM stg_products p
-        LEFT JOIN stg_product_category_name_translation t
-               ON p.product_category_name = t.product_category_name
+        SELECT product_id,
+               product_category_name,
+               product_name_lenght         AS name_length,
+               product_description_lenght  AS description_length,
+               product_photos_qty          AS photos_qty,
+               product_weight_g            AS weight_g,
+               product_length_cm           AS length_cm,
+               product_height_cm           AS height_cm,
+               product_width_cm            AS width_cm
+        FROM stg_products
     ''', stg)
     df.drop_duplicates('product_id', inplace=True)
+
+    # Thử join bảng dịch — nếu không tồn tại thì dùng tên tiếng Bồ Đào Nha làm fallback
+    try:
+        # Kiểm tra tên bảng thực tế trong staging
+        from sqlalchemy import inspect
+        inspector = inspect(stg)
+        stg_tables = inspector.get_table_names(schema='staging')
+        trans_table = next(
+            (t for t in stg_tables if 'translation' in t.lower() or 'category_name' in t.lower()),
+            None
+        )
+        if trans_table:
+            trans = pd.read_sql(
+                f'SELECT product_category_name, product_category_name_english'
+                f' FROM staging.{trans_table}',
+                stg
+            )
+            df = df.merge(trans, on='product_category_name', how='left')
+            df['category_name_en'] = df['product_category_name_english'].fillna(
+                df['product_category_name']
+            )
+            df.drop(columns=['product_category_name_english'], inplace=True)
+        else:
+            logging.warning('Không tìm thấy bảng dịch category — dùng tên gốc tiếng Bồ Đào Nha')
+            df['category_name_en'] = df['product_category_name']
+    except Exception as e:
+        logging.warning(f'Bỏ qua bảng dịch category: {e}')
+        df['category_name_en'] = df['product_category_name']
 
     # Giữ tên tiếng Bồ Đào Nha để tham chiếu nguồn
     df.rename(columns={'product_category_name': 'category_name_pt'}, inplace=True)
